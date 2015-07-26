@@ -1,0 +1,85 @@
+---
+title: "ML Project"
+output: html_document
+---
+
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(caret)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+setwd("G:/documentos/Cursos online/DataScience/mlproj")
+```
+
+## Load data and preprocess
+I load the data with read.csv and since some columns are full of NA I remove them. Finally I also remove timestamps, user_name and the window variables. 
+
+```{r}
+data <- read.csv('pml-training.csv', na.strings = c("", "NA"))
+nas <- apply(data, 2, function(y) sum(length(which(is.na(y)))))
+data <- data[, nas == 0]
+data <- select(data, -contains('timestamp'), -X, -user_name, -contains('window'))
+
+test_data <- read.csv('pml-testing.csv', na.strings = c("", "NA"))
+test_data <- test_data[, nas == 0]
+test_data <- select(test_data, -contains('timestamp'), -X, -user_name, -contains('window'))
+
+```
+
+We are left with `r ncol(data)` predictors and the classe variable.
+Then I split the data into training and test set to be able to predict the out of sample error. Instead of using a validation set I will use k-fold cross validation to tune the model.
+
+```{r}
+set.seed(1234)
+inTrain <- createDataPartition(y=data$classe, p=0.8, list=FALSE)
+testing <- data[-inTrain,]
+training <- data[inTrain,]
+```
+
+I have `r nrow(training)` observations in the training set and `r nrow(testing)` in the testing set.
+
+## Model fitting
+Using the caret packet I fit a model using boosting and 5-fold cross validation.
+```{r warning=FALSE, message=FALSE}
+
+fitControl <- trainControl(method = "cv", number = 5)
+modelFit <- train(classe~., data = training,
+                  method = "gbm", trControl = fitControl,
+                  verbose = FALSE)
+modelFit
+```
+
+### Model accuracy
+```{r}
+ggplot(modelFit)
+```
+
+
+## Model evaluation
+Using the part of the data that I reserved for testing I can evaluate the out of sample error more precisely than using the cross validation error:
+
+```{r}
+prediction <- predict(modelFit, testing)
+confusionMatrix(testing$classe, prediction)
+```
+
+From this data we can be confident that the model is very accurate.
+
+## Prediction
+Finally I use the model to predict the class fro the 20 observations in the provided test data:
+
+```{r}
+answers <- predict(modelFit, test_data)
+answers
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(answers)
+```
+
